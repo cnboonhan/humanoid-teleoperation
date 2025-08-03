@@ -113,21 +113,28 @@ def main(path: str, port: int, flask_port: int = 5000) -> None:
     
     # Add some GUI controls
     timing_handle = server.gui.add_number("Elapsed (ms)", 0.001, disabled=True)
+    
+    # Add gripper control sliders
+    left_gripper_slider = server.gui.add_slider("Left Gripper", 0.0, 1.0, 0.05, 0.0)
+    right_gripper_slider = server.gui.add_slider("Right Gripper", 0.0, 1.0, 0.05, 0.0)
  
     
     # Define joint indices - include waist for proper IK
     lower_body_indices = list(range(12))  # 0-11: legs and hips
-    upper_body_indices = list(range(12, len(initial_config)))  # 12+: waist, arms and hands
+    waist_indices = [12, 13, 14]  # waist_yaw_joint, waist_pitch_joint, waist_roll_joint
+    upper_body_indices = list(range(15, len(initial_config)))  # 15+: arms and hands
     
-    # For IK, include waist and arm joints (waist provides common base for both arms)
-    ik_indices = upper_body_indices
-    
+    # Define hand gripper joint indices
+    left_gripper_indices = list(range(22, 22+6))  # Left hand joints (indices 22-32)
+    right_gripper_indices = list(range(35, 35+6))  # Right hand joints (indices 39-49)
+     
     # Start Flask server in a separate thread
     flask_thread = threading.Thread(target=run_flask_server, args=(flask_port,), daemon=True)
     flask_thread.start()
     print(f"Flask server started on port {flask_port}")
     print(f"Robot config available at: http://localhost:{flask_port}/config")
     
+    current_config = initial_config_array.copy()
     while True:
         # Solve IK for both targets
         start_time = time.time()
@@ -139,12 +146,20 @@ def main(path: str, port: int, flask_port: int = 5000) -> None:
                 target_wxyzs=np.array([ik_target_0.wxyz, ik_target_1.wxyz]),
             )
             
-            # Create a new configuration that updates waist and arm joints
-            # Keep lower body joints at their initial values
-            current_config = initial_config_array.copy()
-            current_config[ik_indices] = solution[ik_indices]
+            # Body
+            current_config[lower_body_indices] = solution[lower_body_indices]
+            current_config[waist_indices] = solution[waist_indices]
+            current_config[upper_body_indices] = solution[upper_body_indices]
+            # Left Hand
+            current_config[left_gripper_indices[0:]] = -left_gripper_slider.value
+            current_config[left_gripper_indices[1:]] = left_gripper_slider.value
+            current_config[left_gripper_indices[2:]] = -left_gripper_slider.value
+            # Right Hand
+            current_config[right_gripper_indices[0:]] = -right_gripper_slider.value
+            current_config[right_gripper_indices[1:]] = right_gripper_slider.value
+            current_config[right_gripper_indices[2:]] = -right_gripper_slider.value
+            # current_config[right_gripper_indices] = right_gripper_slider.value
             
-            # Store current configuration globally for Flask API
             current_robot_config = current_config.copy()
             
             urdf_vis.update_cfg(current_config)
