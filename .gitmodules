@@ -1,0 +1,9 @@
+[submodule "IsaacLab"]
+	path = IsaacLab
+	url = https://github.com/isaac-sim/IsaacLab.git
+[submodule "Wiki-GRx-Models"]
+	path = Wiki-GRx-Models
+	url = https://github.com/FFTAI/Wiki-GRx-Models.git
+[submodule "pyroki"]
+	path = pyroki
+	url = https://github.com/chungmin99/pyroki.git
