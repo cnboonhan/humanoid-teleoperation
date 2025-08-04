@@ -12,7 +12,7 @@ import threading
 
 # Global variables to store target poses
 target_poses = {
-    "end_effector": {"position": None, "orientation": None}
+    "end_effector": {"position": None, "orientation": None, "gripper": None}
 }
 
 # Create Flask app
@@ -50,6 +50,9 @@ def main(port: int, flask_port: int = 5000) -> None:
     # Add some GUI controls
     timing_handle = server.gui.add_number("Elapsed (ms)", 0.001, disabled=True)
     
+    # Add gripper control slider
+    gripper_slider = server.gui.add_slider("Gripper", 0.0, 1.0, 0.01, 0.0)
+    
     # Add reset button
     reset_button = server.gui.add_button("Reset to Initial Pose")
     
@@ -75,6 +78,7 @@ def main(port: int, flask_port: int = 5000) -> None:
         # Update target poses from the transform controls
         target_poses["end_effector"]["position"] = ik_target.position.tolist()
         target_poses["end_effector"]["orientation"] = ik_target.wxyz.tolist()
+        target_poses["end_effector"]["gripper"] = gripper_slider.value
         
         # Update timing
         elapsed_time = 0.05  # Fixed time step
