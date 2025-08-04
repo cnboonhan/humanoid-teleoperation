@@ -4,6 +4,7 @@
 # Standard library imports
 import argparse
 import contextlib
+import requests
 
 # Third-party imports
 import gymnasium as gym
@@ -347,19 +348,99 @@ def main():
 
     subtasks = {}
 
+    ### BH Modify: Self Implementation of Teleoperation ###
     with contextlib.suppress(KeyboardInterrupt) and torch.inference_mode():
+        env.sim.reset()
+        obv = env.reset()
+        teleop_interface.reset()
+        
+        # BH: Use obv to get initial end effector positions
+        left_eef_pos = obv[0]['policy']['left_eef_pos']  # 3D position [x,y,z]
+        left_eef_quat = obv[0]['policy']['left_eef_quat']  # 4D quaternion [qw,qx,qy,qz]
+        right_eef_pos = obv[0]['policy']['right_eef_pos']  # 3D position [x,y,z]
+        right_eef_quat = obv[0]['policy']['right_eef_quat']  # 4D quaternion [qw,qx,qy,qz]
+        hand_joints = obv[0]['policy']['hand_joint_state']  # 22 hand joint angles
+        
+        # Combine position and quaternion into 7D poses
+        left_eef_pose = np.concatenate([left_eef_pos.flatten(), left_eef_quat.flatten()])  # [x,y,z,qw,qx,qy,qz]
+        right_eef_pose = np.concatenate([right_eef_pos.flatten(), right_eef_quat.flatten()])  # [x,y,z,qw,qx,qy,qz]
+        
+        # Create initial teleop_data using obv values
+        initial_teleop_data = [(left_eef_pose, right_eef_pose, hand_joints.flatten())]
+        
         while simulation_app.is_running():
-            # get data from teleop device
-            teleop_data = teleop_interface.advance()
+            
+            # BH: Get delta movements from server and apply to left hand
+            try:    
+                # Make HTTP request to get target pose from server
+                teleop_data = initial_teleop_data.copy()
+                response = requests.get("http://127.0.0.1:5000/target_pose", timeout=0.1)
+                if response.status_code == 200:
+                    target_data = response.json()
+                    target_poses = target_data['target_poses']['end_effector']
+                    teleop_data = initial_teleop_data
+                    
+                    # Convert position and orientation to numpy arrays
+                    position = np.array(target_poses['position'])
+                    orientation = np.array(target_poses['orientation'])
+                    
+                    # Apply position changes
+                    teleop_data[0][0][0:3] += position * 0.01
+                    
+                    # Apply orientation changes using quaternion multiplication
+                    # For small rotations, we can create a small delta quaternion
+                    # and multiply it with the current orientation
+                    current_quat = teleop_data[0][0][3:7]
+                    
+                    # Create a small delta quaternion from the orientation change
+                    # Use a very small scaling factor for fine control
+                    scale_factor = 0.1
+                    delta_quat = orientation * scale_factor
+                    
+                    # For very small rotations, we can approximate with a small angle rotation
+                    # Convert to axis-angle representation for better control
+                    angle = np.linalg.norm(delta_quat[1:])  # magnitude of vector part
+                    if angle > 0:
+                        axis = delta_quat[1:] / angle  # normalize axis
+                        # Create a small rotation quaternion
+                        small_angle = angle * scale_factor
+                        delta_quat = np.array([
+                            np.cos(small_angle/2),  # w
+                            axis[0] * np.sin(small_angle/2),  # x
+                            axis[1] * np.sin(small_angle/2),  # y
+                            axis[2] * np.sin(small_angle/2)   # z
+                        ])
+                    else:
+                        # No rotation, use identity
+                        delta_quat = np.array([1.0, 0.0, 0.0, 0.0])
+                    
+                    # Multiply quaternions: new_quat = current_quat * delta_quat
+                    # Quaternion multiplication formula
+                    w1, x1, y1, z1 = current_quat
+                    w2, x2, y2, z2 = delta_quat
+                    
+                    new_quat = np.array([
+                        w1*w2 - x1*x2 - y1*y2 - z1*z2,  # w
+                        w1*x2 + x1*w2 + y1*z2 - z1*y2,  # x
+                        w1*y2 - x1*z2 + y1*w2 + z1*x2,  # y
+                        w1*z2 + x1*y2 - y1*x2 + z1*w2   # z
+                    ])
+                    
+                    # Normalize the result
+                    quat_norm = np.linalg.norm(new_quat)
+                    if quat_norm > 0:
+                        new_quat = new_quat / quat_norm
+                    
+                    teleop_data[0][0][3:7] = new_quat
+                                
+            except requests.exceptions.RequestException as e:
+                # Server not available or connection failed, continue with original teleop_data
+                pass
 
-            ### BH Modify: Self Implementation of Teleoperation
-
-            # perform action on environment
             if running_recording_instance or True:
-                # compute actions based on environment
                 actions = pre_process_actions(teleop_data, env.num_envs, env.device)
+
                 obv = env.step(actions)
-                print(obv)
                 if subtasks is not None:
                     if subtasks == {}:
                         subtasks = obv[0].get("subtask_terms")
@@ -367,8 +448,7 @@ def main():
                         show_subtask_instructions(instruction_display, subtasks, obv, env.cfg)
             else:
                 env.sim.render()
-            
-            ### BH Modify End
+    ### BH Modify End ###
 
             if success_term is not None:
                 if bool(success_term.func(env, **success_term.params)[0]):
