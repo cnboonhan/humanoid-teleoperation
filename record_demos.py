@@ -383,6 +383,7 @@ def main():
                     # Convert position and orientation to numpy arrays
                     position = np.array(target_poses['position'])
                     orientation = np.array(target_poses['orientation'])
+                    gripper_value = target_poses.get('gripper', 0.0)  # Get gripper value, default to 0.0
                     
                     # Apply position changes
                     teleop_data[0][0][0:3] += position * 0.01
@@ -432,6 +433,18 @@ def main():
                         new_quat = new_quat / quat_norm
                     
                     teleop_data[0][0][3:7] = new_quat
+                    
+                    # Apply gripper value to left hand joints
+                    # The hand joints are in teleop_data[0][2] (third element)
+                    # Apply small changes to hand joints based on gripper value
+                    hand_joints = teleop_data[0][2]
+                    gripper_delta = gripper_value * 0.01  # Small scaling factor
+                    
+                    # Apply gripper delta to hand joints (assuming first 11 joints are left hand)
+                    # This is a simplified approach - you may need to adjust based on your robot's joint structure
+                    for i in range(min(11, len(hand_joints))):
+                        hand_joints[i] += gripper_delta
+                    
                                 
             except requests.exceptions.RequestException as e:
                 # Server not available or connection failed, continue with original teleop_data

@@ -32,7 +32,7 @@ def run_flask_server(flask_port=5000):
     """Run Flask server in a separate thread"""
     app.run(host='0.0.0.0', port=flask_port, debug=False, use_reloader=False)
 
-def main(port: int, flask_port: int = 5000) -> None:
+def main(port: int = 8080, flask_port: int = 5000) -> None:
     global target_poses
     
     server = viser.ViserServer(port=port)
@@ -51,7 +51,7 @@ def main(port: int, flask_port: int = 5000) -> None:
     timing_handle = server.gui.add_number("Elapsed (ms)", 0.001, disabled=True)
     
     # Add gripper control slider
-    gripper_slider = server.gui.add_slider("Gripper", 0.0, 1.0, 0.01, 0.0)
+    gripper_slider = server.gui.add_slider("Gripper", -1.0, 1.0, 0.01, 0.0)
     
     # Add reset button
     reset_button = server.gui.add_button("Reset to Initial Pose")
@@ -72,8 +72,10 @@ def main(port: int, flask_port: int = 5000) -> None:
             # Reset IK target to initial pose
             ik_target.position = initial_palm_pos
             ik_target.wxyz = initial_palm_quat
+            # Reset gripper slider to 0.0
+            gripper_slider.value = 0.0
             reset_button.value = False  # Reset the button state
-            print("Reset to initial pose")
+            print("Reset to initial pose and gripper to 0.0")
         
         # Update target poses from the transform controls
         target_poses["end_effector"]["position"] = ik_target.position.tolist()
